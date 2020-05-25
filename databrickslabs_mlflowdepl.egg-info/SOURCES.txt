@@ -1,0 +1,10 @@
+setup.py
+databrickslabs_mlflowdepl/__init__.py
+databrickslabs_mlflowdepl/cluster_and_libraries.py
+databrickslabs_mlflowdepl/deployment.py
+databrickslabs_mlflowdepl/dev_cicd_pipeline.py
+databrickslabs_mlflowdepl/release_cicd_pipeline.py
+databrickslabs_mlflowdepl.egg-info/PKG-INFO
+databrickslabs_mlflowdepl.egg-info/SOURCES.txt
+databrickslabs_mlflowdepl.egg-info/dependency_links.txt
+databrickslabs_mlflowdepl.egg-info/top_level.txt

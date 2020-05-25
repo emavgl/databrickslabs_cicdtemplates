@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/emv/Downloads/mlflow-deployments-api-master/tests/mlruns/1/185b560680d04241a489a12460e7e3b5/artifacts
+end_time: 1587470213655
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+name: ''
+run_id: 185b560680d04241a489a12460e7e3b5
+run_uuid: 185b560680d04241a489a12460e7e3b5
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1587470213632
+status: 4
+tags: []
+user_id: emv
