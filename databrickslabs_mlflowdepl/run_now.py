@@ -3,7 +3,7 @@ from databrickslabs_mlflowdepl import deployment
 from databrickslabs_mlflowdepl import excontextmgmt
 
 
-def main(pipeline_dir, pipeline_name, cluster_id, reuse_ctx=True):
+def main(pipeline_dir, pipeline_name, cluster_id, reuse_ctx=True, spec_file_suffix=None):
     apiClient = deployment.getDatabricksAPIClient()
 
     model_name, exp_path, cloud = deployment.read_config()
@@ -38,4 +38,4 @@ def main(pipeline_dir, pipeline_name, cluster_id, reuse_ctx=True):
 
     deployment.submit_one_pipeline_to_exctx(apiClient, artifact_uri, pipeline_dir, pipeline_name, libraries,
                                             current_artifacts, cloud,
-                                            cluster_id, execution_context_id)
+                                            cluster_id, execution_context_id, spec_file_suffix)
