@@ -9,7 +9,6 @@ import pkg_resources
 from mlflow.tracking.client import MlflowClient
 
 import mlflow.sklearn
-import os
 from os import listdir
 from os.path import isfile, join, isdir, splitext
 
@@ -17,8 +16,8 @@ from databricks_cli.configure.provider import get_config
 from databricks_cli.configure.config import _get_api_client
 
 PIPELINE_RUNNER = 'pipeline_runner.py'
-PACKAGE_NAME = 'databrickslabs_mlflowdepl'
-PRD_NAME = 'mlflow_deployments-'
+PACKAGE_NAME = 'databrickslabs_cicdtemplates'
+PRD_NAME = 'cicdtemplates-'
 
 
 def set_mlflow_experiment_path(exp_path):
@@ -32,9 +31,15 @@ def set_mlflow_experiment_path(exp_path):
 
 
 def getDatabricksAPIClient():
-    version = pkg_resources.get_distribution(PACKAGE_NAME).version
-    apiClient = _get_api_client(get_config(), command_name=PRD_NAME + version)
-    return apiClient
+    try:
+        version = pkg_resources.get_distribution(PACKAGE_NAME).version
+        apiClient = _get_api_client(get_config(), command_name=PRD_NAME + version)
+        return apiClient
+    except Exception as e:
+        raise Exception(f"""{e}.
+        Have you added the following secrets to your github repo?
+            secrets.DATABRICKS_HOST
+            secrets.DATABRICKS_TOKEN""")
 
 
 def wait_for_job_to_finish(client, run_id):
@@ -54,6 +59,7 @@ def wait_for_cluster_to_start(client, cluster_id):
         if json_res['state'] in ['TERMINATED', 'ERROR', 'UNKNOWN']:
             return 'TERMINATED'
         elif json_res['state'] in ['RUNNING']:
+            time.sleep(30)
             return 'RUNNING'
         else:
             time.sleep(60)
@@ -120,7 +126,8 @@ def log_artifacts(model_name, libraries, register_model=False, dirs_to_deploy=No
                     if libraries:
                         libraries.append({ext[1:]: dist_file})
         if libraries:
-            libraries = libraries + gen_pipeline_dependencies('dependencies', run.info._artifact_uri + '/job/dependencies')
+            libraries = libraries + gen_pipeline_dependencies('dependencies',
+                                                              run.info._artifact_uri + '/job/dependencies')
 
         run_id = run.info.run_uuid
         artifact_uri = run.info._artifact_uri
@@ -170,32 +177,27 @@ def read_config():
     return model_name, exp_path, cloud
 
 
-def check_if_dir_is_pipeline_def(dir, cloud):
+def check_if_dir_is_pipeline_def(dir, cloud, env):
     try:
         with open(join(dir, PIPELINE_RUNNER)):
             pass
     except FileNotFoundError as e:
-        print('pipeline is expected to have a python script')
+        print('Pipeline is expected to have a python script')
         return None
     try:
-        databricks_env = os.environ.get('DATABRICKS_ENV')
-        if databricks_env:
-            spec_file_name = 'job_spec_{}_{}.json'.format(cloud, databricks_env.lower())
-            print('Using spec file {}'.format(spec_file_name))
-            try:
-                with open(join(dir, spec_file_name)) as file:
-                    return json.load(file)
-            except FileNotFoundError as e:
-                print('File not found {}'.format(spec_file_name))
-        spec_file_name = 'job_spec_{}.json'.format(cloud)
-        print('Using spec file {}'.format(spec_file_name))
-        with open(join(dir, spec_file_name)) as file:
-            return json.load(file)
+        conf_path = join(dir, 'job_spec_' + cloud + '.json')
+        if env is not None:
+            conf_path_env = join(dir, 'job_spec_' + cloud + '_' + env + '.json')
+            if path.exists(conf_path_env):
+                conf_path = conf_path_env
+
+        with open(conf_path) as file:
+            job_spec = json.load(file)
+            return job_spec
     except FileNotFoundError as e:
-        print("File not found")
-        print('pipeline is expected to have Databricks Job Definition')
+        print('Pipeline is expected to hava Databricks Job Definition in ', conf_path)
     except JSONDecodeError as e:
-        print('Error decoding JSON')
+        print('Pipeline is expected to hava Databricks Job Definition in ',conf_path)
     return None
 
 
@@ -215,8 +217,8 @@ def check_if_job_is_done(client, handle):
         return None
 
 
-def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud):
-    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
+def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, env):
+    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, env)
     if job_spec is not None:
         submitted_job = submit_one_job(client, pipeline_path, job_spec, artifact_uri, libraries)
         if 'run_id' in submitted_job:
@@ -226,14 +228,13 @@ def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries,
             return None
 
 
-def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, pipeline_name=None):
+def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, env, pipeline_name=None):
     submitted_jobs = []
     for file in listdir(root_folder):
         if (not pipeline_name) or (pipeline_name and file == pipeline_name):
             pipeline_path = join(root_folder, file)
             if isdir(pipeline_path):
-                submitted_job = submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri,
-                                                             libraries, cloud)
+                submitted_job = submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, env)
                 if submitted_job:
                     submitted_jobs.append(submitted_job)
 
@@ -295,14 +296,14 @@ def check_if_job_exists(client, job_id):
         return False
 
 
-def create_or_update_production_jobs(client, root_folder, run_id, artifact_uri, libraries, cloud, model_name,
+def create_or_update_production_jobs(client, root_folder, run_id, artifact_uri, libraries, cloud, env, model_name,
                                      stages, model_version):
     job_ids = get_existing_job_ids(model_name, stages)
     for file in listdir(root_folder):
         pipeline_path = join(root_folder, file)
         pipeline_name = file.lower()
         if isdir(pipeline_path):
-            job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
+            job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, env)
             if job_spec is not None:
                 if job_ids.get(pipeline_name):
                     job_id = job_ids[pipeline_name]
@@ -355,6 +356,12 @@ def create_cluster(client, job_spec, cluster_name=None):
         cluster_spec = job_spec['new_cluster']
         if cluster_name:
             cluster_spec['cluster_name'] = cluster_name
+
+        if cluster_spec.get('spark_conf'):
+            cluster_spec['spark_conf']['spark.databricks.conda.condaMagic.enabled'] = 'true'
+        else:
+            cluster_spec['spark_conf'] = {'spark.databricks.conda.condaMagic.enabled': 'true'}
+
         res = client.perform_query(method='POST', path='/clusters/create', data=cluster_spec)
         if res and res.get('cluster_id'):
             return res['cluster_id']
@@ -366,9 +373,9 @@ def create_cluster(client, job_spec, cluster_name=None):
         return None
 
 
-def install_libraries(client, dir, pipeline_name, cloud, cluster_id, libraries, artifact_uri):
+def install_libraries(client, dir, pipeline_name, cloud, env, cluster_id, libraries, artifact_uri):
     pipeline_path = dir + '/' + pipeline_name
-    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
+    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, env)
     if job_spec:
         libraries = libraries + gen_pipeline_dependencies(pipeline_path + '/dependencies',
                                                           artifact_uri + '/job/' + pipeline_path + '/dependencies')
@@ -389,8 +396,9 @@ def generate_libraries_cell(libraries):
             library = next(iter(library.values()))
         if not ('.jar' in library):
             library = library.replace('dbfs:/', '/dbfs/')
-            code += ('%pip install ' + library + ' \n')
-    return code
+            code += (library + ' ')
+    return '%pip install  ' + code
+
 
 def generate_artifacts_cell(libraries):
     code = ''
@@ -399,6 +407,7 @@ def generate_artifacts_cell(libraries):
             library = library.replace('dbfs:/', '/dbfs/')
             code += ('%pip install --upgrade ' + library + ' \n')
     return code
+
 
 def wait_until(cmd, check_fn, timeout, period=5, *args, **kwargs):
     mustend = time.time() + timeout
@@ -412,19 +421,28 @@ def wait_until(cmd, check_fn, timeout, period=5, *args, **kwargs):
 
 def wait_for_result_of_command(client, cluster_id, ctx_id, cmd_id):
     def check_command_status(cluster_id, ctx_id, cmd_id):
-        return client.perform_query(method='GET', path='/commands/status',
-                                    data={'clusterId': cluster_id, 'contextId': ctx_id, 'commandId': cmd_id})
+        try:
+            return client.perform_query(method='GET', path='/commands/status',
+                                        data={'clusterId': cluster_id, 'contextId': ctx_id, 'commandId': cmd_id})
+        except Exception as e:
+            print('Error has occurred: ', e)
+            return None
+
     def is_finished(res):
         try:
-            return res['status'] == 'Finished'
+            if res is not None:
+                return res['status'] == 'Finished'
+            else:
+                return False
         except:
-            return True
+            return False
 
-    res = wait_until(check_command_status, is_finished, 3600, 5, cluster_id, ctx_id, cmd_id)
+    res = wait_until(check_command_status, is_finished, 24 * 3600, 5, cluster_id, ctx_id, cmd_id)
     return res
 
 
 def execute_command_sync(client, cluster_id, ctx_id, cmd_txt):
+    cmd_id = None
     try:
         print('Sending command:')
         print(cmd_txt)
@@ -435,20 +453,30 @@ def execute_command_sync(client, cluster_id, ctx_id, cmd_txt):
         res = wait_for_result_of_command(client, cluster_id, ctx_id, cmd_id)
         print('Result:')
         try:
-            print(res['results']['data'])
+            if res['results']['resultType'] == 'error':
+                print(res['results']['cause'])
+            else:
+                print(res['results']['data'])
         except:
             print(res)
         return res
+    except KeyboardInterrupt as e:
+        if cmd_id is not None:
+            print('Interrupted. Stopping command execution...')
+            client.perform_query(method='POST', path='/commands/cancel',
+                                 data={'clusterId': cluster_id, 'contextId': ctx_id, 'commandId': cmd_id})
+        raise Exception(e)
     except Exception as e:
-        print('Cannot create execution context due to error: ',e)
+        print('Error has occurred: ', e)
         return None
 
 
 def submit_one_pipeline_to_exctx(client, artifact_uri, pipeline_dir, pipeline_name, libraries, current_artifacts, cloud,
+                                 env,
                                  cluster_id, execution_context_id):
     client.url = client.url.replace('/api/2.0', '/api/1.2')
     pipeline_path = join(pipeline_dir, pipeline_name)
-    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
+    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, env)
     if job_spec is not None:
         if libraries:
             lib_cell = generate_libraries_cell(libraries)
@@ -457,17 +485,12 @@ def submit_one_pipeline_to_exctx(client, artifact_uri, pipeline_dir, pipeline_na
         # install libraries
         execute_command_sync(client, cluster_id, execution_context_id, lib_cell)
         # set param
-        params = []
-        task_node = job_spec['spark_python_task']
-        if task_node.get('parameters'):
-            params = task_node['parameters']
-
-        mlflow_pipeline_parent_dir = artifact_uri + '/job/' + pipeline_dir
-        mlflow_pipeline_path = join(mlflow_pipeline_parent_dir, pipeline_name)
-        params = ["", mlflow_pipeline_path] + params
-
-        print("params", str(params))
-        code = 'import sys\nsys.argv = {}'.format(params)
+        # params = ['', artifact_uri]
+        # task_node = job_spec['spark_python_task']
+        # if task_node.get('parameters'):
+        #    params = task_node['parameters']
+        # params = ['\''+p+'\'' for p in params]
+        code = 'import sys\nsys.argv = [\'\', \'' + artifact_uri + '/job/' + pipeline_path + '\']'
         execute_command_sync(client, cluster_id, execution_context_id, code)
 
         # execute actual code
