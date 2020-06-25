@@ -111,8 +111,12 @@ def log_artifacts(model_name, libraries, register_model=False, dirs_to_deploy=No
                 model_version = None
 
         for dir in dirs_to_deploy:
+            artifact_path = "job"
+            if '/' in dir:
+                dir_path = '/'.join(dir.split("/")[:-1])
+                artifact_path = "job/" + dir_path
             if path.exists(dir):
-                mlflow.log_artifact(dir, artifact_path='job')
+                mlflow.log_artifact(dir, artifact_path=artifact_path)
 
         current_artifacts = []
         for file in listdir('dist'):
