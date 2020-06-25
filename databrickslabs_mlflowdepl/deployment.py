@@ -9,6 +9,7 @@ import pkg_resources
 from mlflow.tracking.client import MlflowClient
 
 import mlflow.sklearn
+import os
 from os import listdir
 from os.path import isfile, join, isdir, splitext
 
@@ -169,7 +170,7 @@ def read_config():
     return model_name, exp_path, cloud
 
 
-def check_if_dir_is_pipeline_def(dir, cloud, spec_file_suffix=None):
+def check_if_dir_is_pipeline_def(dir, cloud):
     try:
         with open(join(dir, PIPELINE_RUNNER)):
             pass
@@ -177,8 +178,9 @@ def check_if_dir_is_pipeline_def(dir, cloud, spec_file_suffix=None):
         print('pipeline is expected to have a python script')
         return None
     try:
-        if spec_file_suffix:
-            spec_file_name = 'job_spec_{}_{}.json'.format(cloud, spec_file_suffix.lower())
+        databricks_env = os.environ.get('DATABRICKS_ENV')
+        if databricks_env:
+            spec_file_name = 'job_spec_{}_{}.json'.format(cloud, databricks_env.lower())
             print('Using spec file {}'.format(spec_file_name))
             try:
                 with open(join(dir, spec_file_name)) as file:
@@ -190,9 +192,10 @@ def check_if_dir_is_pipeline_def(dir, cloud, spec_file_suffix=None):
         with open(join(dir, spec_file_name)) as file:
             return json.load(file)
     except FileNotFoundError as e:
-        print('pipeline is expected to hava Databricks Job Definition in ')
+        print("File not found")
+        print('pipeline is expected to have Databricks Job Definition')
     except JSONDecodeError as e:
-        print('pipeline is expected to hava Databricks Job Definition in ')
+        print('Error decoding JSON')
     return None
 
 
@@ -212,8 +215,8 @@ def check_if_job_is_done(client, handle):
         return None
 
 
-def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, spec_file_suffix=None):
-    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, spec_file_suffix)
+def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud):
+    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
     if job_spec is not None:
         submitted_job = submit_one_job(client, pipeline_path, job_spec, artifact_uri, libraries)
         if 'run_id' in submitted_job:
@@ -223,14 +226,14 @@ def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries,
             return None
 
 
-def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, pipeline_name=None, spec_file_suffix=None):
+def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, pipeline_name=None):
     submitted_jobs = []
     for file in listdir(root_folder):
         if (not pipeline_name) or (pipeline_name and file == pipeline_name):
             pipeline_path = join(root_folder, file)
             if isdir(pipeline_path):
                 submitted_job = submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri,
-                                                             libraries, cloud, spec_file_suffix)
+                                                             libraries, cloud)
                 if submitted_job:
                     submitted_jobs.append(submitted_job)
 
@@ -293,13 +296,13 @@ def check_if_job_exists(client, job_id):
 
 
 def create_or_update_production_jobs(client, root_folder, run_id, artifact_uri, libraries, cloud, model_name,
-                                     stages, model_version, spec_file_suffix=None):
+                                     stages, model_version):
     job_ids = get_existing_job_ids(model_name, stages)
     for file in listdir(root_folder):
         pipeline_path = join(root_folder, file)
         pipeline_name = file.lower()
         if isdir(pipeline_path):
-            job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, spec_file_suffix)
+            job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
             if job_spec is not None:
                 if job_ids.get(pipeline_name):
                     job_id = job_ids[pipeline_name]
@@ -442,10 +445,10 @@ def execute_command_sync(client, cluster_id, ctx_id, cmd_txt):
 
 
 def submit_one_pipeline_to_exctx(client, artifact_uri, pipeline_dir, pipeline_name, libraries, current_artifacts, cloud,
-                                 cluster_id, execution_context_id, spec_file_suffix=None):
+                                 cluster_id, execution_context_id):
     client.url = client.url.replace('/api/2.0', '/api/1.2')
     pipeline_path = join(pipeline_dir, pipeline_name)
-    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud, spec_file_suffix)
+    job_spec = check_if_dir_is_pipeline_def(pipeline_path, cloud)
     if job_spec is not None:
         if libraries:
             lib_cell = generate_libraries_cell(libraries)
@@ -459,8 +462,7 @@ def submit_one_pipeline_to_exctx(client, artifact_uri, pipeline_dir, pipeline_na
         if task_node.get('parameters'):
             params = task_node['parameters']
 
-        pipeline_root_dir = pipeline_dir.split('/')[-1] # to handle the case tests/integration
-        mlflow_pipeline_parent_dir = artifact_uri + '/job/' + pipeline_root_dir
+        mlflow_pipeline_parent_dir = artifact_uri + '/job/' + pipeline_dir
         mlflow_pipeline_path = join(mlflow_pipeline_parent_dir, pipeline_name)
         params = ["", mlflow_pipeline_path] + params
 

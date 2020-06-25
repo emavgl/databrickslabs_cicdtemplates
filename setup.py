@@ -6,7 +6,7 @@ with open("LICENSE", "r") as fh:
 setup(
     name='databrickslabs_mlflowdepl',
     packages=find_packages(),
-    version='0.2.1',
+    version='0.2.2',
     description='ML deploy CICD pipeline',
     author='Thunder Shiviah, Michael Shtelma',
     license=lic
