@@ -187,9 +187,11 @@ def check_if_dir_is_pipeline_def(dir, cloud, env):
     try:
         conf_path = join(dir, 'job_spec_' + cloud + '.json')
         if env is not None:
+            print(f'The databricks environment {env} has been specified.')
             conf_path_env = join(dir, f'job_spec_{cloud}_{env.lower()}.json')
             if path.exists(conf_path_env):
                 conf_path = conf_path_env
+        print(f'Using databricks configuration in {conf_path}')
         with open(conf_path) as file:
             job_spec = json.load(file)
             return job_spec
@@ -484,12 +486,17 @@ def submit_one_pipeline_to_exctx(client, artifact_uri, pipeline_dir, pipeline_na
         # install libraries
         execute_command_sync(client, cluster_id, execution_context_id, lib_cell)
         # set param
-        # params = ['', artifact_uri]
-        # task_node = job_spec['spark_python_task']
-        # if task_node.get('parameters'):
-        #    params = task_node['parameters']
-        # params = ['\''+p+'\'' for p in params]
-        code = 'import sys\nsys.argv = [\'\', \'' + artifact_uri + '/job/' + pipeline_path + '\']'
+        params = []
+        task_node = job_spec['spark_python_task']
+        if task_node.get('parameters'):
+            params = task_node['parameters']
+
+        mlflow_pipeline_parent_dir = artifact_uri + '/job/' + pipeline_dir
+        mlflow_pipeline_path = join(mlflow_pipeline_parent_dir, pipeline_name)
+        params = ["", mlflow_pipeline_path] + params
+
+        print("params", str(params))
+        code = 'import sys\nsys.argv = {}'.format(params)
         execute_command_sync(client, cluster_id, execution_context_id, code)
 
         # execute actual code
