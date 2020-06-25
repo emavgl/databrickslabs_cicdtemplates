@@ -42,7 +42,7 @@ def main(pipeline_dir, pipeline_name, env=None, cluster_id=None, reuse_ctx=True,
     if cluster_id is None:
         print('Creating new cluster...')
         cluster_id = cluster_and_libraries.create_cluster_and_install_libs(pipeline_dir, pipeline_name,
-                                                                           install_libraries=False)
+                                                                           install_libraries=False, env=env)
         print('Created new cluster with ID: ', cluster_id)
         conf.store_cluster_for_pipeline(pipeline_dir, pipeline_name, cluster_id)
 
