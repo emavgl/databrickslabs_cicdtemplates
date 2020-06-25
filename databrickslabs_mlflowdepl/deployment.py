@@ -187,17 +187,16 @@ def check_if_dir_is_pipeline_def(dir, cloud, env):
     try:
         conf_path = join(dir, 'job_spec_' + cloud + '.json')
         if env is not None:
-            conf_path_env = join(dir, 'job_spec_' + cloud + '_' + env + '.json')
+            conf_path_env = join(dir, f'job_spec_{cloud}_{env.lower()}.json')
             if path.exists(conf_path_env):
                 conf_path = conf_path_env
-
         with open(conf_path) as file:
             job_spec = json.load(file)
             return job_spec
     except FileNotFoundError as e:
-        print('Pipeline is expected to hava Databricks Job Definition in ', conf_path)
+        print(f'Pipeline is expected to have a Databricks Job Definition in {conf_path}')
     except JSONDecodeError as e:
-        print('Pipeline is expected to hava Databricks Job Definition in ',conf_path)
+        print(f'Pipeline is expected to have Databricks Job Definition in {conf_path}')
     return None
 
 
