@@ -1,12 +1,10 @@
-import os
 import sys
 from os import path
-import mlflow
 
 from databrickslabs_cicdtemplates import deployment
 
 
-def main(test_folder, prod_folder, do_test, env=None):
+def main(test_folder, prod_folder, do_test, env=None, running_jobs_limit=None):
     apiClient = deployment.getDatabricksAPIClient()
 
     model_name, exp_path, cloud = deployment.read_config()
@@ -17,7 +15,7 @@ def main(test_folder, prod_folder, do_test, env=None):
     run_id, artifact_uri, model_version, libraries, _ = deployment.log_artifacts(model_name, libraries, True)
 
     if do_test:
-        res = deployment.submit_jobs_for_all_pipelines(apiClient, test_folder, artifact_uri, libraries, cloud, env)
+        res = deployment.submit_jobs_for_all_pipelines(apiClient, test_folder, artifact_uri, libraries, cloud, env, running_jobs_limit=running_jobs_limit)
         if not res:
             print('Tests were not successful. Quitting..')
             sys.exit(-100)

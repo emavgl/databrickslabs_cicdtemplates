@@ -209,17 +209,19 @@ def check_if_dir_is_pipeline_def(dir, cloud, env):
 def submit_one_job(client, dir, job_spec, artifact_uri, libraries):
     adjust_job_spec(job_spec, artifact_uri + '/job/' + dir, dir, libraries)
     job_run_id = client.perform_query(method='POST', path='/jobs/runs/submit', data=job_spec)
-    print(job_run_id)
     return job_run_id
 
 
 def check_if_job_is_done(client, handle):
-    json_res = client.perform_query(method='GET', path='/jobs/runs/get-output', data=handle)
-    print(json_res)
+    json_res = get_job_information(client, handle)
     if json_res['metadata']['state']['life_cycle_state'] in ['TERMINATED', 'INTERNAL_ERROR']:
         return json_res['metadata']['state']['result_state']
     else:
         return None
+
+
+def get_job_information(client, handle):
+    return client.perform_query(method='GET', path='/jobs/runs/get-output', data=handle)
 
 
 def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, env):
@@ -233,16 +235,39 @@ def submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries,
             return None
 
 
-def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, env, pipeline_name=None):
+def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, cloud, env, pipeline_name=None, running_jobs_limit=None):
     submitted_jobs = []
+    running_jobs = 0
     for file in listdir(root_folder):
         if (not pipeline_name) or (pipeline_name and file == pipeline_name):
             pipeline_path = join(root_folder, file)
             if isdir(pipeline_path):
+                if running_jobs_limit is not None:
+                    while running_jobs >= running_jobs_limit:
+                        print(f"Reached the limit of {running_jobs} running jobs. Retrying in 60 seconds.")
+                        time.sleep(60)
+                        running_jobs = 0
+                        for s in submitted_jobs:
+                            current_info = check_if_job_is_done(client, s)
+                            if current_info is None:
+                                running_jobs += 1
+                            if current_info is not None and current_info != 'SUCCESS':
+                                print(f'Job {s} was not successful.')
+                                print(get_job_information(client, s))
+                                return False
                 submitted_job = submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, env)
                 if submitted_job:
+                    running_jobs += 1
+                    job_info = get_job_information(client, submitted_job)
+                    job_filtered_info = {
+                        "job_id": job_info['metadata']['job_id'],
+                        "run_id": job_info['metadata']['run_id'],
+                        "task": job_info['metadata']['task'],
+                        "start_time": job_info['metadata']['start_time'],
+                        "run_page_url": job_info['metadata']['run_page_url'],
+                    }
+                    print(f"New Job {job_filtered_info['job_id']} submitted.", job_filtered_info)
                     submitted_jobs.append(submitted_job)
-
     return wait_for_all_jobs_to_finish(client, submitted_jobs)
 
 
