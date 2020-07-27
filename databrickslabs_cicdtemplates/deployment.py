@@ -252,7 +252,7 @@ def submit_jobs_for_all_pipelines(client, root_folder, artifact_uri, libraries, 
                             if current_info is None:
                                 running_jobs += 1
                             if current_info is not None and current_info != 'SUCCESS':
-                                print(f'Job {s} was not successful.')
+                                print(f"Job {s['run_id']} was not successful.")
                                 print(get_job_information(client, s))
                                 return False
                 submitted_job = submit_jobs_for_one_pipeline(client, pipeline_path, artifact_uri, libraries, cloud, env)
@@ -281,6 +281,7 @@ def wait_for_all_jobs_to_finish(client, submitted_jobs):
                     succesfull_jobs.append(handle)
                 else:
                     print('Job ' + str(handle['run_id']) + ' was not successful.')
+                    print(get_job_information(client, handle))
                     return False
         submitted_jobs = [x for x in submitted_jobs if x not in succesfull_jobs]
         if len(submitted_jobs) == 0:
