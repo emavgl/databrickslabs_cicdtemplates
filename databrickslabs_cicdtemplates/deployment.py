@@ -22,6 +22,10 @@ PRD_NAME = 'cicdtemplates-'
 
 def set_mlflow_experiment_path(exp_path):
     try:
+        mlflowclient = MlflowClient()
+        exp = mlflowclient.get_experiment_by_name(exp_path)
+        if exp is None:
+            mlflowclient.create_experiment(exp_path, artifact_location='dbfs:' + exp_path + 'Artifacts')
         mlflow.set_experiment(exp_path)
     except Exception as e:
         raise Exception(f"""{e}.
