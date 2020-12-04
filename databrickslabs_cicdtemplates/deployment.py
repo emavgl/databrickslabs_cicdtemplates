@@ -19,9 +19,12 @@ PIPELINE_RUNNER = 'pipeline_runner.py'
 PACKAGE_NAME = 'databrickslabs_cicdtemplates'
 PRD_NAME = 'cicdtemplates-'
 
-
 def set_mlflow_experiment_path(exp_path):
     try:
+        mlflowclient = MlflowClient()
+        exp = mlflowclient.get_experiment_by_name(exp_path)
+        if exp is None:
+            mlflowclient.create_experiment(exp_path, artifact_location='dbfs:' + exp_path + 'Artifacts')
         mlflow.set_experiment(exp_path)
     except Exception as e:
         raise Exception(f"""{e}.
@@ -90,9 +93,10 @@ def prepare_libraries():
 
 def log_artifacts(model_name, libraries, register_model=False, dirs_to_deploy=None):
     if dirs_to_deploy is None:
-        dirs_to_deploy = ['tests', 'pipelines', 'dependencies']
+        dirs_to_deploy = ['tests', 'pipelines', 'dependencies', 'ad_hoc_pipelines']
     job_files = ['runtime_requirements.txt']
     model_version = None
+
     # log everything we need to mlflow
     with mlflow.start_run() as run:
         for f in job_files:
@@ -413,8 +417,10 @@ def install_libraries(client, dir, pipeline_name, cloud, env, cluster_id, librar
         res = client.perform_query(method='POST', path='/libraries/install',
                                    data={'cluster_id': cluster_id, 'libraries': libraries})
 
+        print("Installing libraries")
+        print(f"Cluster ID: {cluster_id}")
+        print("libraries: ", libraries)
         print(res)
-
     else:
         print('Cannot find pipeline ', pipeline_name, ' in directory ', dir, ' for the cloud ', cloud)
 
